@@ -22,23 +22,28 @@
 #
 ###############################################################################
 
-__author__ = 'Ruslan Spivak <ruslan.spivak@gmail.com>'
-
 import time
 import socket
 import argparse
 import sys
+import os
 import textwrap
 
 import paramiko
 
-from sftpserver.stub_sftp import StubServer, StubSFTPServer
+from thinknum_sftpserver.stub_sftp import (
+    NewSFTPServer,
+    StubServer, 
+    StubSFTPServer
+)
 
-HOST, PORT = 'localhost', 3373
+
+HOST, PORT = 'localhost', 22
 BACKLOG = 10
 
 
-def start_server(host, port, keyfile, level):
+def start_server(host, port, keyfile, level, basedir):
+    print (host, port, keyfile, level)
     paramiko_level = getattr(paramiko.common, level)
     paramiko.common.logging.basicConfig(level=paramiko_level)
 
@@ -53,10 +58,16 @@ def start_server(host, port, keyfile, level):
         host_key = paramiko.RSAKey.from_private_key_file(keyfile)
         transport = paramiko.Transport(conn)
         transport.add_server_key(host_key)
+        StubSFTPServer.ROOT = basedir
         transport.set_subsystem_handler(
-            'sftp', paramiko.SFTPServer, StubSFTPServer)
+            'sftp', 
+            # paramiko.SFTPServer,
+            NewSFTPServer,
+            StubSFTPServer
+        )
 
         server = StubServer()
+        server.ROOT = basedir
         transport.start_server(server=server)
 
         channel = transport.accept()
@@ -86,6 +97,10 @@ def main():
         '-k', '--keyfile', dest='keyfile', metavar='FILE',
         help='Path to private key, for example /tmp/test_rsa.key'
     )
+    parser.add_argument(
+        '-b',  '--basedir', dest='basedir',
+        help='Base directory path'
+    )
 
     args = parser.parse_args()
 
@@ -93,8 +108,27 @@ def main():
         parser.print_help()
         sys.exit(-1)
 
-    start_server(args.host, args.port, args.keyfile, args.level)
+    if args.basedir is None or not os.path.isdir(args.basedir):
+        parser.print_help()
+        sys.exit(-1)
+
+    start_server(args.host, args.port, args.keyfile, args.level, args.basedir)
 
 
 if __name__ == '__main__':
+    # readme.io file should be in root folder
     main()
+
+
+
+'''
+ssh-keygen -t rsa -b 4096
+
+sudo python sftp_server.py --basedir /Users/sangwonseo/historical --keyfile /Users/sangwonseo/dev_projects/sftpserver/id_rsa
+
+openssl req -out CSR.csr -new -newkey rsa:2048 -nodes -keyout /Users/sangwonseo/dev_projects/sftpserver/test_rsa.key
+
+python sftp_server.py --keyfile /Users/sangwonseo/dev_projects/sftpserver/test_rsa.key
+
+python sftp_server.py --keyfile /Users/sangwonseo/dev_projects/sftpserver/id_rsa --basedir /Users/sangwonseo/dev_projects/sftpserver/history/
+'''
